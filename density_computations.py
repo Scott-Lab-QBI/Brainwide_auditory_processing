@@ -115,12 +115,18 @@ def compute_KDE(mat_fpath, col=0, binned=False):
     print('Finished the computation of Kernel Density Estimates!')
     return density_dict
     
-def compute_KDE_2D(mat_fpath):
+def compute_KDE_2D(mat_fpath, bandwidth_dict=None):
     """
     compute_KDE_2D receives the file path to a .mat file
     with multiple matrices containing x,y coordinates and a label 
     and computes the Kernel Density Estimates for each subset of 
     coordinates pertaining to each label value
+    
+    inputs: 
+        mat_fpath : filepath to a mat file (string)
+        bandwidth_dict : in case you want a specific bandwith with which to 
+                         compute KDE, give as a dictionary with keys being the same as variables in the mat file
+                         and value another dictionary, with keys bein frequencies and values the binwidths to use
     """
     from scipy import io as sio 
     from sklearn.neighbors import KernelDensity
@@ -131,10 +137,18 @@ def compute_KDE_2D(mat_fpath):
     metadata = ['__header__', '__version__', '__globals__']
     
     density_dict = {}
-    bandwidth_dict = {}
-    
+    if bandwidth_dict is None:
+        print('bandwidth dict does not exist, create one to start.')
+        trigger = True
+        bandwidth_dict = {}
+    else: 
+        print('using existing bandwidth dict.')
+        trigger = False 
+
     for key, value in mat.items():
         if key not in metadata:
+            if trigger:
+                bandwidth_dict.update({key : []})
             labels = np.unique(value[:,-1])
             
             print('computing KDE for', key)
@@ -151,17 +165,20 @@ def compute_KDE_2D(mat_fpath):
                     data = value[value[:,-1]==label,:-2]
                     
                 if len(data) > 1:
-                    if bandwidth_dict not in locals():
+                    #print('data shape', data.shape)
+                    if trigger:
                         #print('data shape', data.shape)
                         grid = GridSearchCV(KernelDensity(kernel='gaussian'),
                                             {'bandwidth': bandwidths},
                                             cv=LeaveOneOut(), n_jobs=-1)
                         grid.fit(data)
                         print("Freq {0} best bandwidth: {1}".format(label, grid.best_params_['bandwidth']))
-                        bandwidth_dict.update({key : grid.best_params_['bandwidth']})
+                        bandwidth_dict[key].append(grid.best_params_['bandwidth'])
                         kde = grid.best_estimator_ 
-                    else:
+                    elif not trigger:
                         # construct a gaussian kernel density estimate of the distribution
+                        # with the existing optimal bandwidth
+                        print('using existing optimal bandwidth of: ', str(bandwidth_dict[key][i]))
                         kde = KernelDensity(bandwidth=bandwidth_dict[key][i], kernel='gaussian')
                         kde.fit(data)
                 else:
@@ -187,7 +204,8 @@ def compute_KDE_2D(mat_fpath):
                 
             density_dict.update({key+'_density' : density})
             del density
-            
+    
+    del bandwidth_dict
     sio.savemat(mat_fpath[:-4]+'_density.mat', density_dict)
     print('Finished the computation of Kernel Density Estimates!')
     return density_dict
@@ -445,7 +463,7 @@ if __name__ == '__main__':
     mds_dict = compute_MDS(ARGS['file_path'])
     #mds_dict = sio.loadmat(ARGS['file_path'][:-4]+'_MDS.mat')
     mds_density_dict = compute_KDE_2D(ARGS['file_path'][:-4]+'_MDS.mat')
-    #mds_density_dict = sio.loadmat(ARGS['file_path'][:-4]+'_MDS_density.mat')
+    mds_density_dict = sio.loadmat(ARGS['file_path'][:-4]+'_MDS_density.mat')
     
     p_val_matrices = {}
     print(mds_dict)
